@@ -61,30 +61,68 @@ const SUPPORT_TO = process.env.SUPPORT_TO || 'iphuboficial@gmail.com';
 const envv = (...keys) => { for (const k of keys) { const v = String(process.env[k] || '').trim().replace(/^["']|["']$/g, ''); if (v) return v; } return ''; };
 function mailCfg() {
   const user = envv('SMTP_USER', 'MAIL_USER', 'EMAIL_USER', 'GMAIL_USER');
-  const pass = envv('SMTP_PASS', 'SMTP_PASSWORD', 'MAIL_PASS', 'EMAIL_PASS', 'GMAIL_PASS').replace(/\s+/g, '');
+  // Quitar espacios/saltos (App Password de Google a veces se pega con espacios)
+  const pass = envv('SMTP_PASS', 'SMTP_PASSWORD', 'MAIL_PASS', 'EMAIL_PASS', 'GMAIL_PASS').replace(/[\s\r\n]+/g, '');
   return { user, pass };
 }
-function getMailer() {
+function getMailer(prefer587) {
   const { user, pass } = mailCfg();
   if (!nodemailer || !user || !pass) return null;
-  return nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, auth: { user, pass }, connectionTimeout: 8000, greetingTimeout: 8000, socketTimeout: 8000 });
+  if (prefer587) {
+    return nodemailer.createTransport({
+      host: 'smtp.gmail.com', port: 587, secure: false, requireTLS: true,
+      auth: { user, pass },
+      connectionTimeout: 12000, greetingTimeout: 12000, socketTimeout: 12000,
+      tls: { minVersion: 'TLSv1.2' }
+    });
+  }
+  return nodemailer.createTransport({
+    host: 'smtp.gmail.com', port: 465, secure: true,
+    auth: { user, pass },
+    connectionTimeout: 12000, greetingTimeout: 12000, socketTimeout: 12000
+  });
+}
+let _mailDiagLogged = false;
+function logMailDiagOnce() {
+  if (_mailDiagLogged) return;
+  _mailDiagLogged = true;
+  const { user, pass } = mailCfg();
+  console.log('[MAIL diag] nodemailer=' + (nodemailer ? 'ok' : 'FALTA') +
+    ' SMTP_USER=' + (user ? user : 'VACIO') +
+    ' SMTP_PASS=' + (pass ? ('si (' + pass.length + ' chars)') : 'VACIO') +
+    ' SUPPORT_TO=' + SUPPORT_TO);
 }
 async function sendMail(to, subject, text, html, attachments) {
+  logMailDiagOnce();
   const { user, pass } = mailCfg();
-  const mailer = getMailer();
-  if (!mailer) {
+  if (!nodemailer || !user || !pass) {
     console.log(`\n[MAIL no enviado] Falta usuario o clave. user=${user ? 'si' : 'no'} pass=${pass ? 'si' : 'no'}\nPara: ${to}\n${text}\n`);
     return false;
   }
+  const opts = { from: `"IPHub" <${user}>`, to, subject, text, html: html || undefined, attachments: attachments || undefined };
   try {
-    await mailer.sendMail({ from: `"IPHub" <${user}>`, to, subject, text, html: html || undefined, attachments: attachments || undefined });
+    await getMailer(false).sendMail(opts);
+    console.log('[MAIL ok] enviado a', to, 'via 465');
     return true;
-  } catch (e) { console.error('Error SMTP:', e.message); return false; }
+  } catch (e1) {
+    console.error('Error SMTP 465:', e1.message);
+  }
+  try {
+    await getMailer(true).sendMail(opts);
+    console.log('[MAIL ok] enviado a', to, 'via 587');
+    return true;
+  } catch (e2) {
+    console.error('Error SMTP 587:', e2.message);
+    console.error('[MAIL FAIL] Render: SMTP_USER=Gmail completo, SMTP_PASS=App Password 16 letras sin espacios. https://myaccount.google.com/apppasswords');
+    return false;
+  }
 }
 const sha = v => crypto.createHash('sha256').update(String(v)).digest('hex');
 async function issueCode(user) {
   const code = String(crypto.randomInt(100000, 1000000));
   db.get('users').find({ id: user.id }).assign({ verifyHash: sha(code), verifyExp: Date.now() + 15 * 60 * 1000, verifyTries: 0 }).write();
+  // Siempre en Logs de Render por si SMTP falla — podés copiar el código de ahí
+  console.log('[VERIFY CODE] user=' + user.email + ' code=' + code + ' (valido 15 min)');
   return sendMail(user.email, `${code} es tu código de verificación de IPHub`,
     `Tu código de verificación de IPHub es: ${code}\nVence en 15 minutos. Si no lo pediste, ignorá este correo.`,
     `<div style="font-family:Segoe UI,Arial;max-width:420px;margin:auto;padding:28px;border-radius:16px;background:#0b1d3a;color:#fff"><h2 style="margin:0 0 8px">IPHub</h2><p>Tu código de verificación:</p><p style="font-size:34px;letter-spacing:8px;font-weight:700;color:#10b981">${code}</p><p style="color:#94a3b8;font-size:12px">Vence en 15 minutos.</p></div>`);
