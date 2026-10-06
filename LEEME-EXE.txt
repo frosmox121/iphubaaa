@@ -1,0 +1,52 @@
+IPHub.exe  (monitor de red + sesión de la misma cuenta de la página)
+=================================================
+Qué hace: al abrirlo escanea la red local y muestra dispositivos (nombre, IP, MAC, fabricante, tipo,
+SO probable, latencia, puertos/servicios, banners, certificados, mDNS/UPnP, riesgo). Podés iniciar
+sesión con la misma cuenta de la web para que Topología muestre esa red. Los datos locales se
+guardan en la PC del usuario.
+
+Logo: corregido. El CSP del EXE ahora permite img-src 'self' y se usa logo.png como icono de ventana
+y de empaquetado. Si no ves el logo, recompilá con BUILD-EXE.bat después de actualizar estos archivos.
+
+Compilar (en Windows):
+1) Doble clic en BUILD-EXE.bat
+   - Instala electron + packager solo en agent/ (descarga ~100-150 MB la primera vez).
+2) Resultado: agent\dist\IPHub-win32-x64\IPHub.exe
+   (dentro de esa carpeta hay más archivos; no muevas solo el .exe)
+3) Para la web: comprimí la carpeta completa IPHub-win32-x64 como zip y copiala a
+   public\download\IPHub-Windows.zip  (el botón de descarga de la página la sirve).
+
+Probar sin compilar:  cd agent && npm install && npm start
+
+Cómo partir el zip en partes (si pesa muchos MB) y juntarlo después
+------------------------------------------------------------------
+En la PC donde generaste el zip (PowerShell o CMD):
+
+  A) Crear partes de 20 MB (ajustá el tamaño si querés):
+
+     cd agent\dist
+     powershell -Command "Compress-Archive -Path 'IPHub-win32-x64\*' -DestinationPath 'IPHub-Windows.zip' -Force"
+     split -b 20m IPHub-Windows.zip IPHub-part-
+
+     (Si no tenés split de Git Bash, usá 7-Zip o:
+      powershell -Command "$i=0; Get-Content IPHub-Windows.zip -Encoding Byte -ReadCount 20MB | ForEach-Object { [IO.File]::WriteAllBytes(('IPHub-part-{0:D2}.bin' -f $i++), $_) }")
+
+  B) Enviar las partes (IPHub-part-aa, IPHub-part-ab, ... o .bin) por el medio que uses.
+
+  C) En la PC destino, juntar y descomprimir (CMD o PowerShell):
+
+     copy /b IPHub-part-* IPHub-Windows.zip
+     (o si usaste .bin:  copy /b IPHub-part-00.bin + IPHub-part-01.bin + ... IPHub-Windows.zip)
+
+     Luego:
+     mkdir IPHub
+     tar -xf IPHub-Windows.zip -C IPHub
+     (o clic derecho → Extraer todo)
+
+     Abrí IPHub\IPHub.exe  (o la carpeta que haya generado packager).
+
+Conexión con la página: en el exe poné la URL del servidor (por defecto la de producción o
+http://127.0.0.1:3001), entrá con el mismo correo/contraseña o Continuar con Google/Discord.
+Topología muestra esa red. Exportar genera JSON para importar si no hay conexión.
+
+Dueño: iphuboficial@gmail.com / lbaa1986 (también acepta el punto final).
